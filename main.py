@@ -1,12 +1,13 @@
 import os
 import requests
+import urllib.parse  # 用於處理地址轉網址編碼
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # 初始化 FastAPI 應用程式
 app = FastAPI()
 
-# 設定跨網域 (CORS)，讓您的 GitHub Pages 網頁可以順利連線到 Render
+# 設定跨網域 (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,42 +15,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 從環境變數讀取敏感資訊 (請確保 Render 後台已設定這些 Key)
+# 從環境變數讀取敏感資訊
 RECAPTCHA_SECRET = os.getenv("RECAPTCHA_SECRET")
-LINE_TOKEN = os.getenv("LINE_TOKEN")
+LINE_TOKEN = os.getenv("LINE_TOKEN") or os.getenv("LINE_ACCESS_TOKEN")
 GOOGLE_URL = os.getenv("GOOGLE_URL")
+MY_USER_ID = os.getenv("MY_USER_ID")
 
 @app.get("/")
 def home():
-    """首頁測試用，瀏覽器打開網址看到這行代表後端活著"""
-    return {"message": "報修系統後端運行中 - 弱電工程專用"}
+    return {"message": "報修系統後端運行中 - 含地圖導航功能"}
 
 @app.post("/submit_repair")
 async def handle_repair(request: Request):
     try:
-        # 接收前端傳來的 JSON 資料
         data = await request.json()
         
-        # --- 步驟 1: Google reCAPTCHA 機器人驗證 ---
+        # --- 步驟 1: Google reCAPTCHA 驗證 ---
         captcha_token = data.get("captcha")
         verify_res = requests.post(
             "https://www.google.com/recaptcha/api/siteverify",
-            data={
-                'secret': RECAPTCHA_SECRET,
-                'response': captcha_token
-            }
+            data={'secret': RECAPTCHA_SECRET, 'response': captcha_token}
         ).json()
 
         if not verify_res.get("success"):
-            print("❌ 機器人驗證失敗")
+            print(f"❌ 機器人驗證失敗")
             return {"status": "fail", "message": "機器人驗證失敗"}
 
-        # --- 步驟 2: 整理資料變數 ---
+        # --- 步驟 2: 整理資料 ---
         customer_name = data.get("customer_name", "未提供")
         phone = data.get("phone", "未提供")
         address = data.get("address", "未提供")
         issue_type = data.get("issue_type", "未提供")
         description = data.get("description", "無詳細內容")
+
+        # 生成 Google Maps 導航連結
+        # 這裡會將地址轉換為網址專用的格式 (URL Encode)
+        encoded_address = urllib.parse.quote(address)
+        google_maps_url = f"https://www.google.com/maps/dir/?api=1&destination={encoded_address}"
 
         payload = {
             "customer_name": customer_name,
@@ -59,35 +61,31 @@ async def handle_repair(request: Request):
             "description": description
         }
 
-        # --- 步驟 3: 同步資料到 Google 表格 ---
+        # --- 步驟 3: 同步到 Google 表格 ---
         if GOOGLE_URL:
-            try:
-                g_res = requests.post(GOOGLE_URL, json=payload, timeout=5)
-                print(f"✅ Google 表格同步結果: {g_res.status_code}")
-            except Exception as e:
-                print(f"❌ Google 表格寫入出錯: {e}")
+            requests.post(GOOGLE_URL, json=payload, timeout=5)
 
-        # --- 步驟 4: 發送 LINE 通知 ---
-        if LINE_TOKEN:
-            line_api_url = "https://api.line.me/v2/bot/message/broadcast"
+        # --- 步驟 4: 發送 LINE 通知 (含導航按鈕) ---
+        if LINE_TOKEN and MY_USER_ID:
+            line_api_url = "https://api.line.me/v2/bot/message/push"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {LINE_TOKEN}"
             }
             
-            # 組合訊息包 (包含文字與 Flex 卡片)
             message_packet = {
+                "to": MY_USER_ID,
                 "messages": [
                     {
                         "type": "text",
-                        "text": f"🛠️ 新報修單通知\n客戶：{customer_name}\n電話：{phone}\n項目：{issue_type}"
+                        "text": f"🛠️ 新報修通知\n客戶：{customer_name}\n地址：{address}"
                     },
                     {
                         "type": "flex",
                         "altText": f"新報修單-{customer_name}",
                         "contents": {
                             "type": "bubble",
-                            "styles": {"header": {"backgroundColor": "#E63946"}},
+                            "styles": {"header": {"backgroundColor": "#E63946"}, "footer": {"separator": True}},
                             "header": {
                                 "type": "box", "layout": "vertical",
                                 "contents": [{"type": "text", "text": "🚨 收到新報修單", "weight": "bold", "color": "#ffffff", "size": "md"}]
@@ -102,21 +100,31 @@ async def handle_repair(request: Request):
                                     {"type": "text", "text": f"報修項目：{issue_type}", "size": "sm", "color": "#E63946", "weight": "bold"},
                                     {"type": "text", "text": f"故障描述：{description}", "wrap": True, "size": "xs", "color": "#666666"}
                                 ]
+                            },
+                            "footer": {
+                                "type": "box", "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "button",
+                                        "style": "primary",
+                                        "color": "#4361EE",
+                                        "action": {
+                                            "type": "uri",
+                                            "label": "📍 開啟導航 (Google Maps)",
+                                            "uri": google_maps_url
+                                        }
+                                    }
+                                ]
                             }
                         }
                     }
                 ]
             }
-            
-            # 執行發送
             line_res = requests.post(line_api_url, headers=headers, json=message_packet)
-            
-            # --- 重要：在 Render Logs 印出 LINE 的真實反應 ---
-            print(f">>> LINE 回應狀態碼: {line_res.status_code}")
-            print(f">>> LINE 回應詳細內容: {line_res.text}")
+            print(f">>> LINE 發送結果: {line_res.status_code}")
 
-        return {"status": "success", "message": "報修單已成功處理"}
+        return {"status": "success", "message": "報修單已處理 (含導航按鈕)"}
 
     except Exception as e:
-        print(f"❌ 程式發生意外錯誤: {str(e)}")
+        print(f"❌ 錯誤: {str(e)}")
         return {"status": "error", "message": str(e)}
