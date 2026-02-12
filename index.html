@@ -1,1 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專業弱電維修報修系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="max-w-md mx-auto bg-white shadow-lg rounded-lg overflow-hidden mt-10 mb-10">
+        <div class="bg-red-600 p-6 text-white text-center">
+            <h1 class="text-2xl font-bold">🛠️ 弱電維修快速報修</h1>
+            <p class="text-sm mt-2">竭誠為您服務，填寫後我們將儘速聯絡</p>
+        </div>
+        
+        <form id="repairForm" class="p-6 space-y-4">
+            <div>
+                <label class="block text-gray-700 font-bold mb-1">客戶姓名</label>
+                <input type="text" name="customer_name" required class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500">
+            </div>
+            <div>
+                <label class="block text-gray-700 font-bold mb-1">聯絡電話</label>
+                <input type="tel" name="phone" placeholder="例如: 0912345678" required class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500">
+            </div>
+            <div>
+                <label class="block text-gray-700 font-bold mb-1">安裝地址</label>
+                <input type="text" name="address" required class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500">
+            </div>
+            <div>
+                <label class="block text-gray-700 font-bold mb-1">維修項目</label>
+                <select name="issue_type" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500">
+                    <option>監視器系統</option>
+                    <option>門禁對講</option>
+                    <option>網路佈線/WiFi</option>
+                    <option>電話總機</option>
+                    <option>其他弱電維修</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-gray-700 font-bold mb-1">故障描述</label>
+                <textarea name="description" rows="3" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500" placeholder="請簡述故障狀況..."></textarea>
+            </div>
 
+            <div class="g-recaptcha" data-sitekey="6LcmSmksAAAAAPacT8i9eivxMYhYP6DxgNmcxq0Q"></div>
+
+            <button type="submit" class="w-full bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition duration-300">
+                🚀 送出報修單
+            </button>
+        </form>
+
+        <div class="bg-gray-50 p-4 text-center text-gray-500 text-xs italic">
+            本系統受 Google reCAPTCHA 保護
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('repairForm').onsubmit = async (e) => {
+            e.preventDefault();
+            
+            // 1. 檢查機器人驗證
+            const captchaResponse = grecaptcha.getResponse();
+            if (!captchaResponse) {
+                alert('請先勾選「我不是機器人」！');
+                return;
+            }
+
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.innerText = '處理中...';
+
+            // 2. 收集資料
+            const formData = Object.fromEntries(new FormData(e.target));
+            formData['captcha'] = captchaResponse; // 加入驗證碼
+
+            try {
+                // 發送到後端 (Render URL)
+                const response = await fetch('https://my-line-bot-kjazz.onrender.com/submit_repair', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === "success") {
+                    alert('✅ 報修單已成功送出！我們會儘速聯繫您。');
+                    e.target.reset();
+                    grecaptcha.reset();
+                } else {
+                    alert('❌ 送出失敗：' + (result.message || '請檢查網路後重試'));
+                }
+            } catch (error) {
+                alert('❌ 無法連線至伺服器，請稍後再試');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🚀 送出報修單';
+            }
+        };
+    </script>
+</body>
+</html>
