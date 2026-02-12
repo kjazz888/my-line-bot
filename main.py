@@ -50,6 +50,7 @@ def home():
 
 @app.post("/submit_repair")
 async def handle_repair(order: RepairOrder):
+requests.post("https://script.google.com/macros/s/AKfycby6TckctibsC6Y3YzvW6xqi1iIWhHn5Y_Hhh7FlZ3-SESLXJw22p4aFGz3vGYvJ6_uV/exec", json=order.dict())
     # 儲存紀錄
     save_to_csv(order)
     
@@ -102,3 +103,4 @@ async def handle_repair(order: RepairOrder):
     response = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
     
     return {"status": "success", "line_code": response.status_code}
+
