@@ -1,13 +1,11 @@
 import os
 import requests
-import urllib.parse  # 用於處理地址轉網址編碼
+import urllib.parse
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-# 初始化 FastAPI 應用程式
 app = FastAPI()
 
-# 設定跨網域 (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 從環境變數讀取敏感資訊
 RECAPTCHA_SECRET = os.getenv("RECAPTCHA_SECRET")
 LINE_TOKEN = os.getenv("LINE_TOKEN") or os.getenv("LINE_ACCESS_TOKEN")
 GOOGLE_URL = os.getenv("GOOGLE_URL")
@@ -23,14 +20,14 @@ MY_USER_ID = os.getenv("MY_USER_ID")
 
 @app.get("/")
 def home():
-    return {"message": "報修系統後端運行中 - 含地圖導航功能"}
+    return {"message": "報修系統運行中 - 已強化超時穩定性"}
 
 @app.post("/submit_repair")
 async def handle_repair(request: Request):
     try:
         data = await request.json()
         
-        # --- 步驟 1: Google reCAPTCHA 驗證 ---
+        # --- 1. 機器人驗證 ---
         captcha_token = data.get("captcha")
         verify_res = requests.post(
             "https://www.google.com/recaptcha/api/siteverify",
@@ -38,18 +35,16 @@ async def handle_repair(request: Request):
         ).json()
 
         if not verify_res.get("success"):
-            print(f"❌ 機器人驗證失敗")
             return {"status": "fail", "message": "機器人驗證失敗"}
 
-        # --- 步驟 2: 整理資料 ---
+        # --- 2. 整理資料 ---
         customer_name = data.get("customer_name", "未提供")
         phone = data.get("phone", "未提供")
         address = data.get("address", "未提供")
         issue_type = data.get("issue_type", "未提供")
         description = data.get("description", "無詳細內容")
 
-        # 生成 Google Maps 導航連結
-        # 這裡會將地址轉換為網址專用的格式 (URL Encode)
+        # 生成地圖網址
         encoded_address = urllib.parse.quote(address)
         google_maps_url = f"https://www.google.com/maps/dir/?api=1&destination={encoded_address}"
 
@@ -61,11 +56,17 @@ async def handle_repair(request: Request):
             "description": description
         }
 
-        # --- 步驟 3: 同步到 Google 表格 ---
+        # --- 3. 同步到 Google 表格 (加上錯誤保護) ---
         if GOOGLE_URL:
-            requests.post(GOOGLE_URL, json=payload, timeout=5)
+            try:
+                # 延長等待到 15 秒，避免 Google Script 反應太慢
+                g_res = requests.post(GOOGLE_URL, json=payload, timeout=15)
+                print(f"✅ Google 表格同步結果: {g_res.status_code}")
+            except Exception as e:
+                # 即使 Google 掛掉，也只印出錯誤，讓程式繼續跑發送 LINE
+                print(f"⚠️ Google 表格暫時無法同步，但不影響 LINE 發送。原因: {e}")
 
-        # --- 步驟 4: 發送 LINE 通知 (含導航按鈕) ---
+        # --- 4. 發送 LINE 通知 (含導航按鈕) ---
         if LINE_TOKEN and MY_USER_ID:
             line_api_url = "https://api.line.me/v2/bot/message/push"
             headers = {
@@ -78,14 +79,14 @@ async def handle_repair(request: Request):
                 "messages": [
                     {
                         "type": "text",
-                        "text": f"🛠️ 新報修通知\n客戶：{customer_name}\n地址：{address}"
+                        "text": f"🛠️ 新報修單通知\n客戶：{customer_name}\n地址：{address}"
                     },
                     {
                         "type": "flex",
                         "altText": f"新報修單-{customer_name}",
                         "contents": {
                             "type": "bubble",
-                            "styles": {"header": {"backgroundColor": "#E63946"}, "footer": {"separator": True}},
+                            "styles": {"header": {"backgroundColor": "#E63946"}},
                             "header": {
                                 "type": "box", "layout": "vertical",
                                 "contents": [{"type": "text", "text": "🚨 收到新報修單", "weight": "bold", "color": "#ffffff", "size": "md"}]
@@ -110,7 +111,7 @@ async def handle_repair(request: Request):
                                         "color": "#4361EE",
                                         "action": {
                                             "type": "uri",
-                                            "label": "📍 開啟導航 (Google Maps)",
+                                            "label": "📍 開啟導航",
                                             "uri": google_maps_url
                                         }
                                     }
@@ -123,8 +124,8 @@ async def handle_repair(request: Request):
             line_res = requests.post(line_api_url, headers=headers, json=message_packet)
             print(f">>> LINE 發送結果: {line_res.status_code}")
 
-        return {"status": "success", "message": "報修單已處理 (含導航按鈕)"}
+        return {"status": "success"}
 
     except Exception as e:
-        print(f"❌ 錯誤: {str(e)}")
+        print(f"❌ 嚴重錯誤: {str(e)}")
         return {"status": "error", "message": str(e)}
