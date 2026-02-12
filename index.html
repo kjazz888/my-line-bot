@@ -40,6 +40,52 @@
                 <label class="block text-gray-700 font-bold mb-1">故障描述</label>
                 <textarea name="description" rows="3" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"></textarea>
             </div>
+            <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+
+<div class="g-recaptcha mb-4" data-sitekey="6LcmSmksAAAAAPacT8i9eivxMYhYP6DxgNmcxq0Q"></div>
+
+<script>
+    document.getElementById('repairForm').onsubmit = async (e) => {
+        e.preventDefault();
+        
+        // 檢查是否有勾選機器人
+        const captchaResponse = grecaptcha.getResponse();
+        if (!captchaResponse) {
+            alert('請勾選「我不是機器人」再送出唷！');
+            return;
+        }
+
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+        btn.innerText = '驗證中...';
+
+        const formData = Object.fromEntries(new FormData(e.target));
+        // 把驗證結果塞進去傳給後端
+        formData['captcha'] = captchaResponse;
+
+        try {
+            const response = await fetch('您的Render網址/submit_repair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+            if (response.ok && result.status === "success") {
+                alert('✅ 報修單已成功送出！');
+                e.target.reset();
+                grecaptcha.reset(); // 重置驗證碼
+            } else {
+                alert('❌ 送出失敗：' + (result.message || '未知錯誤'));
+            }
+        } catch (error) {
+            alert('❌ 伺服器連線失敗');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = '🚀 送出報修單';
+        }
+    };
+</script>
             <button type="submit" class="w-full bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition duration-300">
                 🚀 送出報修單
             </button>
@@ -82,4 +128,5 @@
     </script>
 </body>
 </html>
+
 
