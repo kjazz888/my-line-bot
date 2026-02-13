@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# 設定跨網域 (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 從環境變數讀取敏感資訊
 RECAPTCHA_SECRET = os.getenv("RECAPTCHA_SECRET")
 LINE_TOKEN = os.getenv("LINE_TOKEN") or os.getenv("LINE_ACCESS_TOKEN")
 GOOGLE_URL = os.getenv("GOOGLE_URL")
@@ -22,16 +20,14 @@ MY_USER_ID = os.getenv("MY_USER_ID")
 
 @app.get("/")
 def home():
-    """首頁測試用"""
-    return {"message": "專業弱電工單系統 - 森林綠科技版運行中"}
+    return {"message": "專業弱電工單系統 - 穩定修復版"}
 
 @app.post("/submit_repair")
 async def handle_repair(request: Request):
     try:
-        # 接收前端 JSON
         data = await request.json()
         
-        # --- 步驟 1: Google reCAPTCHA 驗證 ---
+        # 1. 驗證
         captcha_token = data.get("captcha")
         verify_res = requests.post(
             "https://www.google.com/recaptcha/api/siteverify",
@@ -40,30 +36,29 @@ async def handle_repair(request: Request):
         ).json()
 
         if not verify_res.get("success"):
-            print("❌ 機器人驗證失敗")
-            return {"status": "fail", "message": "機器人驗證失敗"}
+            return {"status": "fail", "message": "驗證失敗"}
 
-        # --- 步驟 2: 整理資料 ---
-        customer_name = data.get("customer_name", "未提供")
-        phone = data.get("phone", "未提供")
-        address = data.get("address", "未提供")
-        issue_type = data.get("issue_type", "未提供")
-        description = data.get("description", "無詳細內容")
+        # 2. 整理資料 (確保無空值)
+        customer_name = str(data.get("customer_name", "客戶"))
+        phone = str(data.get("phone", "無電話"))
+        address = str(data.get("address", "無地址"))
+        issue_type = str(data.get("issue_type", "維修"))
+        description = str(data.get("description", "-"))
 
-        # 生成地圖與撥號網址
+        # --- 修正導航連結 (使用官方標準格式) ---
         encoded_address = urllib.parse.quote(address)
-        google_maps_url = f"https://www.google.com/maps/dir/?api=1&destination={encoded_address}"
-        phone_url = f"tel:{phone}"
+        # 換成這條最穩的路徑
+        google_maps_url = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
+        phone_url = f"tel:{phone.replace('-', '').replace(' ', '')}" # 去除電話中的雜字
 
-        # --- 步驟 3: 同步到 Google 表格 (超時保護) ---
+        # 3. 同步到 Google
         if GOOGLE_URL:
             try:
-                requests.post(GOOGLE_URL, json=data, timeout=15)
-                print("✅ Google 表格同步完成")
-            except Exception as e:
-                print(f"⚠️ Google 同步異常: {e}")
+                requests.post(GOOGLE_URL, json=data, timeout=10)
+            except:
+                pass
 
-        # --- 步驟 4: 發送 LINE 專業版 Flex Message ---
+        # 4. 發送 LINE (針對 400 錯誤精簡格式)
         if LINE_TOKEN and MY_USER_ID:
             line_api_url = "https://api.line.me/v2/bot/message/push"
             headers = {
@@ -76,7 +71,7 @@ async def handle_repair(request: Request):
                 "messages": [
                     {
                         "type": "flex",
-                        "altText": f"🛠️ 新進工單：{customer_name}",
+                        "altText": f"🛠️ 新工單: {customer_name}",
                         "contents": {
                             "type": "bubble",
                             "styles": {
@@ -86,41 +81,31 @@ async def handle_repair(request: Request):
                             "header": {
                                 "type": "box", "layout": "vertical",
                                 "contents": [
-                                    {"type": "text", "text": "數位弱電工程服務", "color": "#95D5B2", "size": "xs", "weight": "bold", "letterSpacing": "2px"},
+                                    {"type": "text", "text": "數位弱電工程服務", "color": "#95D5B2", "size": "xs", "weight": "bold"},
                                     {"type": "text", "text": "派遣工單：待處理", "weight": "bold", "color": "#ffffff", "size": "lg", "margin": "sm"}
                                 ]
                             },
                             "body": {
-                                "type": "box", "layout": "vertical", "spacing": "lg",
+                                "type": "box", "layout": "vertical", "spacing": "md",
                                 "contents": [
                                     {
                                         "type": "box", "layout": "horizontal",
                                         "contents": [
-                                            {"type": "text", "text": "👤 客戶姓名", "color": "#888888", "size": "sm", "flex": 2},
+                                            {"type": "text", "text": "👤 客戶", "color": "#888888", "size": "sm", "flex": 2},
                                             {"type": "text", "text": customer_name, "weight": "bold", "size": "sm", "color": "#1B4332", "flex": 5}
                                         ]
                                     },
                                     {
-                                        "type": "box", "layout": "horizontal", "verticalAlign": "center",
+                                        "type": "box", "layout": "horizontal",
                                         "contents": [
-                                            {"type": "text", "text": "📞 聯絡電話", "color": "#888888", "size": "sm", "flex": 2},
+                                            {"type": "text", "text": "📞 電話", "color": "#888888", "size": "sm", "flex": 2},
                                             {
-                                                "type": "text", 
-                                                "text": phone, 
-                                                "weight": "bold", 
-                                                "size": "sm", 
-                                                "color": "#2D6A4F", 
-                                                "flex": 5,
-                                                "action": {
-                                                    "type": "uri",
-                                                    "label": "撥打電話",
-                                                    "uri": phone_url
-                                                },
-                                                "decoration": "underline"
+                                                "type": "text", "text": phone, "weight": "bold", "size": "sm", "color": "#2D6A4F", "flex": 5,
+                                                "action": {"type": "uri", "label": "call", "uri": phone_url}
                                             }
                                         ]
                                     },
-                                    {"type": "separator"},
+                                    {"type": "separator", "margin": "md"},
                                     {
                                         "type": "box", "layout": "vertical", "spacing": "xs",
                                         "contents": [
@@ -133,7 +118,7 @@ async def handle_repair(request: Request):
                                         "contents": [
                                             {"type": "text", "text": "🔧 報修項目", "color": "#888888", "size": "xs", "weight": "bold"},
                                             {"type": "text", "text": f"【{issue_type}】", "size": "sm", "color": "#081C15", "weight": "bold"},
-                                            {"type": "text", "text": description, "wrap": True, "size": "xs", "color": "#666666", "margin": "xs"}
+                                            {"type": "text", "text": description, "wrap": True, "size": "xs", "color": "#666666"}
                                         ]
                                     }
                                 ]
@@ -142,13 +127,9 @@ async def handle_repair(request: Request):
                                 "type": "box", "layout": "vertical",
                                 "contents": [
                                     {
-                                        "type": "button",
-                                        "style": "primary",
-                                        "color": "#1B4332",
+                                        "type": "button", "style": "primary", "color": "#1B4332",
                                         "action": {
-                                            "type": "uri",
-                                            "label": "🌐 開啟衛星導航",
-                                            "uri": google_maps_url
+                                            "type": "uri", "label": "🌐 開啟衛星導航", "uri": google_maps_url
                                         }
                                     }
                                 ]
@@ -157,11 +138,13 @@ async def handle_repair(request: Request):
                     }
                 ]
             }
-            line_res = requests.post(line_api_url, headers=headers, json=message_packet)
-            print(f">>> LINE 發送結果: {line_res.status_code}")
+            res = requests.post(line_api_url, headers=headers, json=message_packet)
+            print(f">>> LINE 最終測試結果: {res.status_code}")
+            if res.status_code != 200:
+                print(f">>> 錯誤原因: {res.text}")
 
         return {"status": "success"}
 
     except Exception as e:
-        print(f"❌ 嚴重錯誤: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        print(f"❌ 錯誤: {e}")
+        return {"status": "error"}
