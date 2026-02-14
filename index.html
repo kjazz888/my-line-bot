@@ -154,4 +154,12 @@
                 alert('❌ 連線逾時：請檢查 LINE 是否有收到工單推播，若無請重試。');
             } finally {
                 // 恢復按鈕狀態
-                btn.disabled =
+                btn.disabled = false;
+                btn.innerHTML = '<span>發送工單派遣申請</span>';
+                btn.classList.remove('opacity-70');
+                note.classList.add('hidden');
+            }
+        };
+    </script>
+</body>
+</html>
