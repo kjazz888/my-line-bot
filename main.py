@@ -71,7 +71,7 @@ def get_device_flex(device_name, steps, image_url):
         "footer": {
             "type": "box", "layout": "vertical", "spacing": "sm",
             "contents": [
-                {"type": "button", "style": "primary", "color": "#1B4332", "action": {"type": "uri", "label": "🚨 還是不行，我要報修", "uri": "https://kjazz888.github.io/my-line-bot/"}},
+                {"type": "button", "style": "primary", "color": "#1B4332", "action": {"type": "uri", "label": "🚨 還是不行，我要報修", "uri": "https://liff.line.me/2009131881-t8EctqkW"}},
                 {"type": "button", "style": "link", "action": {"type": "message", "label": "返回主選單", "text": "故障自檢"}}
             ]
         }
@@ -184,3 +184,4 @@ async def handle_repair(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+
