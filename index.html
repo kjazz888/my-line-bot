@@ -28,16 +28,19 @@
         <form id="repairForm" class="p-8 space-y-5">
             <div>
                 <label class="block text-gray-500 text-xs font-bold mb-1 uppercase">Customer / 客戶姓名</label>
-                <input type="text" name="customer_name" required class="tech-gray-input w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-900" placeholder="請輸入姓名">
+                <input type="text" name="customer_name" id="customer_name" required class="tech-gray-input w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-900" placeholder="讀取中...">
             </div>
+            
             <div>
                 <label class="block text-gray-500 text-xs font-bold mb-1 uppercase">Contact / 聯絡電話</label>
                 <input type="tel" name="phone" required class="tech-gray-input w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-900" placeholder="例如: 0912345678">
             </div>
+            
             <div>
                 <label class="block text-gray-500 text-xs font-bold mb-1 uppercase">Address / 安裝地址</label>
                 <input type="text" name="address" required class="tech-gray-input w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-900" placeholder="請輸入維修地址">
             </div>
+            
             <div>
                 <label class="block text-gray-500 text-xs font-bold mb-1 uppercase">Service / 維修項目</label>
                 <select name="issue_type" class="tech-gray-input w-full border rounded-lg px-4 py-3 text-gray-700">
@@ -48,6 +51,7 @@
                     <option>其他弱電維修</option>
                 </select>
             </div>
+            
             <div>
                 <label class="block text-gray-500 text-xs font-bold mb-1 uppercase">Details / 故障描述</label>
                 <textarea name="description" rows="3" class="tech-gray-input w-full border rounded-lg px-4 py-3" placeholder="請簡述故障狀況..."></textarea>
@@ -72,16 +76,30 @@
     </div>
 
     <script>
-        // 初始化 LIFF (如果您有使用 LIFF 連結)
+        // --- 1. 初始化 LIFF 功能 ---
         async function initializeLiff() {
             try {
-                await liff.init({ liffId: "您的_LIFF_ID" }); 
+                // 使用老闆申請的專屬 LIFF ID
+                await liff.init({ liffId: "2009131881-t8EctqkW" }); 
+                
+                if (liff.isLoggedIn()) {
+                    // 成功登入後，抓取 LINE 用戶資料
+                    const profile = await liff.getProfile();
+                    document.getElementById("customer_name").value = profile.displayName;
+                } else {
+                    // 若在非 LINE 環境，清空 placeholder
+                    document.getElementById("customer_name").placeholder = "請輸入姓名";
+                }
             } catch (err) {
-                console.log("LIFF 初始化失敗，這可能是非 LINE 環境開啟");
+                console.log("LIFF 初始化失敗");
+                document.getElementById("customer_name").placeholder = "請輸入姓名";
             }
         }
+        
+        // 頁面載入即啟動 LIFF
         initializeLiff();
 
+        // --- 2. 處理表單提交邏輯 ---
         document.getElementById('repairForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
@@ -93,9 +111,15 @@
                 return;
             }
 
-            // --- 狀態切換 ---
+            // --- 進入發送狀態 (防止重複點擊) ---
             btn.disabled = true;
-            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" ...>資料處理中...</svg>`;
+            btn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>資料同步中...</span>
+            `;
             btn.classList.add('opacity-70');
             note.classList.remove('hidden');
 
@@ -103,7 +127,7 @@
             formData['captcha'] = captchaResponse;
 
             try {
-                // 修正：發送至後端的路徑
+                // 發送至 Render 後端
                 const response = await fetch('https://my-line-bot-d0cc.onrender.com/submit_repair', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -115,25 +139,19 @@
                 if (response.ok && result.status === "success") {
                     alert('✅ 工單已成功派遣！我們會儘速聯繫您。');
                     
-                    // 如果在 LINE 內開啟，成功後自動關閉視窗
+                    // 成功後的核心動作：自動關閉 LINE 視窗
                     if (liff.isInClient()) {
                         liff.closeWindow();
                     } else {
                         e.target.reset();
                         grecaptcha.reset();
+                        document.getElementById("customer_name").placeholder = "請輸入姓名";
                     }
                 } else {
                     alert('❌ 送出失敗：' + (result.message || '請檢查網路後重試'));
                 }
             } catch (error) {
-                alert('❌ 連線逾時：伺服器回應較慢，請確認 LINE 是否有收到工單。');
+                alert('❌ 連線逾時：請檢查 LINE 是否有收到工單推播，若無請重試。');
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span>發送工單派遣申請</span>';
-                btn.classList.remove('opacity-70');
-                note.classList.add('hidden');
-            }
-        };
-    </script>
-</body>
-</html>
+                // 恢復按鈕狀態
+                btn.disabled =
